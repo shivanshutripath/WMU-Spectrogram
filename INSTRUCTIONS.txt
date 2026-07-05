@@ -1,0 +1,134 @@
+========================================================================
+ U-Net-1D vs U-Net-2D fault / power-quality-disturbance detection
+ Single-phase AND three-phase experiments (self-contained)
+========================================================================
+
+WHAT THIS IS
+------------
+This folder reproduces, from scratch, the comparison between two matched
+convolutional U-Nets on power-system disturbance detection:
+
+  * U-Net-1D  - reads the RAW WAVEFORM window (time domain)
+  * U-Net-2D  - reads the log-STFT SPECTROGRAM window (time-frequency)
+
+Both networks share the same channel widths (8,16,32,64), so any difference
+in the results is due to the input REPRESENTATION (raw vs. spectrogram), not
+the model size. Each U-Net also has a parallel fault-type head. The models are
+implemented in PURE NUMPY (unet_numpy.py) - no PyTorch/TensorFlow needed.
+
+The same experiment is run in two settings:
+
+  three_phase/  - real augmented IBR dataset, 6 channels (Va,Vb,Vc,Ia,Ib,Ic),
+                  Fs = 1000 Hz. Train/val on backgrounds A+B, TEST on the
+                  unseen background C.
+  single_phase/ - synthetic single-phase voltage records, 1 channel,
+                  Fs = 3000 Hz. Train on days 1-5, TEST on the unseen day 6.
+                  U-Net-2D is swept over 4 STFT overlaps (0/25/50/75%).
+
+
+REQUIREMENTS
+------------
+- Python 3.9 or newer
+- The packages in requirements.txt (numpy, matplotlib, pandas)
+
+Install them with:
+
+    pip install -r requirements.txt
+
+(Everything runs on CPU. No GPU is required.)
+
+
+------------------------------------------------------------------------
+ 1) THREE-PHASE EXPERIMENT  (folder: three_phase/)
+------------------------------------------------------------------------
+The dataset is already included in three_phase/data/ as eight .npz parts
+(waveforms_part01..08_*.npz, ~260 MB total, 200 events).
+
+To run:
+
+    cd three_phase
+    python3 run_unet_comparison.py
+
+This trains U-Net-1D and U-Net-2D, evaluates on the unseen background C, and:
+  * prints a metrics table (AP@0.5/0.7/0.8/0.9, mAP[.5:.95], precision,
+    recall, event-detection %, interval IoU, edge errors, window AUC/F1,
+    fault-type accuracy, #params) plus a 1-D vs 2-D delta summary,
+  * writes plots/summary.json (all metrics as JSON),
+  * writes figures to plots/ :
+        training_curves.png   - loss + validation F1 per epoch
+        test_event_traces.png - per-window fault probability on test events
+        pr_curves.png         - precision-recall at IoU=0.5
+        ap_vs_iou.png         - AP as the IoU threshold is swept 0.5 -> 0.95
+        summary_bars.png      - AP / IoU / start-error bar charts
+
+Default training length is 20 epochs (1-D) and 30 epochs (2-D). Runtime is on
+the order of tens of minutes on a typical laptop CPU.
+
+Quick sanity run (a couple of minutes, NOT representative results):
+
+    UNET_EPOCHS=2 UNET2D_EPOCHS=2 python3 run_unet_comparison.py
+
+
+------------------------------------------------------------------------
+ 2) SINGLE-PHASE EXPERIMENT  (folder: single_phase/)
+------------------------------------------------------------------------
+The dataset is already included in single_phase/data_det/ (day1..6.npz).
+
+To run:
+
+    cd single_phase
+    python3 run_detection.py
+
+This trains one U-Net-1D (raw waveform) once, plus U-Net-2D at four STFT
+overlaps (0% / 25% / 50% / 75%), evaluates on the unseen day 6, and:
+  * prints the overlap-sweep metrics table,
+  * writes results_detection.json,
+  * writes figures to single_phase/figs/ :
+        det_examples.png       - one example per disturbance class
+        det_traces.png         - localization traces (1-D vs 2-D)
+        det_pr_curves.png      - precision-recall curves
+        det_ap_vs_iou.png      - AP vs IoU threshold
+        det_type_confusion.png - fault-type confusion matrix
+  * writes single_phase_section.tex (a LaTeX write-up; optional, ignore if
+    you only want the numbers/figures).
+
+NOTE: the pure-numpy U-Nets are slow; the full 5-model sweep can take a
+few hours on CPU. The figures/JSON are written at the end.
+
+(Optional) To REGENERATE the single-phase dataset from scratch instead of
+using the included .npz files:
+
+    cd single_phase
+    python3 generate_events.py     # rewrites data_det/day1.npz ... day6.npz
+
+
+------------------------------------------------------------------------
+ FOLDER LAYOUT
+------------------------------------------------------------------------
+  INSTRUCTIONS.txt          - this file
+  README.md                 - short overview
+  requirements.txt          - Python dependencies
+  .gitignore
+
+  three_phase/
+    run_unet_comparison.py  - MAIN 3-phase script (U-Net-1D vs U-Net-2D)
+    data_pipeline.py        - STFT + windowing + labeling
+    aug_pipeline.py         - loads the augmented dataset, builds A/B/C splits
+    unet_numpy.py           - pure-numpy U-Net (1-D and 2-D)
+    data/                   - the 8 .npz dataset parts (200 events)
+
+  single_phase/
+    run_detection.py        - MAIN single-phase script (overlap sweep)
+    detect_pipeline.py      - single-channel STFT/windowing/metrics
+    generate_events.py      - (re)generates the single-phase dataset
+    unet_numpy.py           - pure-numpy U-Net (same module as three_phase)
+    data_det/               - day1.npz ... day6.npz
+
+
+------------------------------------------------------------------------
+ REPRODUCIBILITY
+------------------------------------------------------------------------
+All random seeds are fixed inside the scripts, so repeated runs give the same
+numbers. Results are written next to each script (three_phase/plots/ and
+single_phase/figs/ + the JSON files).
+========================================================================
